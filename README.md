@@ -1,4 +1,4 @@
-# Speech Recognition App
+# Speech Recognition Demo Example App
 
 Приложение для распознавания речи с поддержкой Whisper и Vosk.
 
