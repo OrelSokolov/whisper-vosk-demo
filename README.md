@@ -88,4 +88,4 @@ audio/
 - Docker и Docker Compose (для контейнерного запуска)
 - Python 3.13+ (для локального запуска)
 - FFmpeg (для обработки аудио)
-- 2GB+ RAM (для загрузки моделей)# whisper-vosk-demo
+- 2GB+ RAM (для загрузки моделей)
