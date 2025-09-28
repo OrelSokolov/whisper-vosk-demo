@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whisper AI - Распознавание речи</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 10px;
+            font-weight: 500;
+            display: none;
+        }
+
+        .status.recording {
+            background: #ffebee;
+            color: #c62828;
+            border: 2px solid #ef5350;
+        }
+
+        .status.processing {
+            background: #fff3e0;
+            color: #ef6c00;
+            border: 2px solid #ff9800;
+        }
+
+        .status.success {
+            background: #e8f5e8;
+            color: #2e7d32;
+            border: 2px solid #4caf50;
+        }
+
+        .status.error {
+            background: #ffebee;
+            color: #c62828;
+            border: 2px solid #ef5350;
+        }
+
+        .controls {
+            margin: 30px 0;
+        }
+
+        .btn {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 10px;
+            min-width: 150px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn.recording {
+            background: linear-gradient(45deg, #ef5350, #f44336);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 5px solid #667eea;
+            text-align: left;
+            min-height: 100px;
+        }
+
+        .result h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .result-text {
+            font-size: 16px;
+            line-height: 1.6;
+            color: #555;
+        }
+
+        .microphone-icon {
+            font-size: 24px;
+            margin-right: 10px;
+        }
+
+        .clear-btn {
+            background: #6c757d;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Распознавание речи</h1>
+        <p style="color: #666; margin-bottom: 20px;">Нажмите на кнопку и продиктуйте ваше сообщение</p>
+        
+        <div class="backend-selector" style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 10px; border-left: 5px solid #667eea;">
+            <h4 style="margin-bottom: 10px; color: #333;">Выберите движок распознавания:</h4>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="radio" name="backend" value="whisper" style="margin-right: 8px;">
+                    <span>🤖 Whisper Turbo (быстрая обработка)</span>
+                </label>
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="radio" name="backend" value="vosk" checked style="margin-right: 8px;">
+                    <span>⚡ Vosk (быстрая обработка)</span>
+                </label>
+            </div>
+            <div id="backendStatus" style="margin-top: 10px; font-size: 14px; color: #666;"></div>
+        </div>
+        
+        <div class="status" id="status"></div>
+        
+        <div class="controls">
+            <button class="btn" id="recordBtn">
+                <span class="microphone-icon">🎤</span>
+                Начать запись
+            </button>
+            <button class="btn clear-btn" id="clearBtn" style="display: none;">
+                Очистить результат
+            </button>
+        </div>
+        
+        <div class="result" id="result" style="display: none;">
+            <h3>Исправленный текст:</h3>
+            <div class="result-text" id="resultText"></div>
+            
+            <div id="audioControls" style="margin-top: 15px; display: none;">
+                <button class="btn" id="playAudioBtn" style="background: linear-gradient(45deg, #4CAF50, #45a049); font-size: 14px; padding: 10px 20px;">
+                    🎵 Прослушать запись
+                </button>
+                <audio id="audioPlayer" style="display: none;" controls></audio>
+            </div>
+            
+            <div id="originalResult" style="display: none; margin-top: 20px; padding: 15px; background: #f0f0f0; border-radius: 8px; border-left: 5px solid #ccc;">
+                <h4 style="color: #666; margin-bottom: 10px;">Оригинальный текст:</h4>
+                <div id="originalText" style="color: #888; font-style: italic;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+
+        const recordBtn = document.getElementById('recordBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const status = document.getElementById('status');
+        const result = document.getElementById('result');
+        const resultText = document.getElementById('resultText');
+        const audioControls = document.getElementById('audioControls');
+        const playAudioBtn = document.getElementById('playAudioBtn');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const backendStatus = document.getElementById('backendStatus');
+
+        // Проверяем поддержку записи аудио
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            showStatus('Ваш браузер не поддерживает запись аудио', 'error');
+            recordBtn.disabled = true;
+        }
+
+        recordBtn.addEventListener('click', toggleRecording);
+        clearBtn.addEventListener('click', clearResult);
+        playAudioBtn.addEventListener('click', playAudio);
+        
+        // Обработчики для переключателя бэкендов
+        document.querySelectorAll('input[name="backend"]').forEach(radio => {
+            radio.addEventListener('change', switchBackend);
+        });
+        
+        // Загружаем информацию о доступных бэкендах
+        loadBackendInfo();
+
+        async function toggleRecording() {
+            if (!isRecording) {
+                await startRecording();
+            } else {
+                stopRecording();
+            }
+        }
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    await sendAudioToServer(audioBlob);
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                
+                recordBtn.innerHTML = '<span class="microphone-icon">⏹️</span> Остановить запись';
+                recordBtn.classList.add('recording');
+                showStatus('Идет запись... Говорите в микрофон', 'recording');
+
+            } catch (error) {
+                console.error('Ошибка при записи:', error);
+                showStatus('Ошибка доступа к микрофону', 'error');
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                isRecording = false;
+                
+                recordBtn.innerHTML = '<span class="microphone-icon">🎤</span> Начать запись';
+                recordBtn.classList.remove('recording');
+                showStatus('Обработка аудио...', 'processing');
+                
+                // Останавливаем все треки потока
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
+        }
+
+        async function sendAudioToServer(audioBlob) {
+            try {
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'recording.wav');
+
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showStatus('Текст успешно распознан и исправлен!', 'success');
+                    showResult(data.text, data.original, data.audio_url);
+                } else {
+                    showStatus(`Ошибка: ${data.error}`, 'error');
+                }
+
+            } catch (error) {
+                console.error('Ошибка отправки:', error);
+                showStatus('Ошибка при отправке аудио на сервер', 'error');
+            }
+        }
+
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.className = `status ${type}`;
+            status.style.display = 'block';
+            
+            // Скрываем статус через 5 секунд для success/error
+            if (type === 'success' || type === 'error') {
+                setTimeout(() => {
+                    status.style.display = 'none';
+                }, 5000);
+            }
+        }
+
+        function showResult(text, originalText, audioUrl) {
+            resultText.textContent = text;
+            result.style.display = 'block';
+            clearBtn.style.display = 'inline-block';
+            
+            // Показываем кнопку прослушивания, если есть аудио
+            if (audioUrl) {
+                audioPlayer.src = audioUrl;
+                audioControls.style.display = 'block';
+                // Сбрасываем состояние кнопки для нового аудио
+                playAudioBtn.innerHTML = '🎵 Прослушать запись';
+                playAudioBtn.onclick = playAudio;
+            } else {
+                audioControls.style.display = 'none';
+            }
+            
+            // Показываем оригинальный текст, если он отличается от исправленного
+            if (originalText && originalText !== text) {
+                document.getElementById('originalText').textContent = originalText;
+                document.getElementById('originalResult').style.display = 'block';
+            } else {
+                document.getElementById('originalResult').style.display = 'none';
+            }
+        }
+
+        function playAudio() {
+            if (audioPlayer.src) {
+                audioPlayer.play();
+                playAudioBtn.innerHTML = '⏸️ Остановить';
+            }
+        }
+
+        function pauseAudio() {
+            audioPlayer.pause();
+            playAudioBtn.innerHTML = '🎵 Прослушать запись';
+        }
+
+        // Обработчики событий аудиоплеера
+        audioPlayer.addEventListener('play', function() {
+            playAudioBtn.innerHTML = '⏸️ Остановить';
+            playAudioBtn.onclick = pauseAudio;
+        });
+
+        audioPlayer.addEventListener('pause', function() {
+            playAudioBtn.innerHTML = '🎵 Прослушать запись';
+            playAudioBtn.onclick = playAudio;
+        });
+
+        audioPlayer.addEventListener('ended', function() {
+            playAudioBtn.innerHTML = '🎵 Прослушать запись';
+            playAudioBtn.onclick = playAudio;
+        });
+
+        function clearResult() {
+            result.style.display = 'none';
+            clearBtn.style.display = 'none';
+            resultText.textContent = '';
+            audioControls.style.display = 'none';
+            audioPlayer.src = '';
+            document.getElementById('originalResult').style.display = 'none';
+            document.getElementById('originalText').textContent = '';
+        }
+
+        async function loadBackendInfo() {
+            try {
+                const response = await fetch('/api/backends');
+                const data = await response.json();
+                
+                // Обновляем статус
+                backendStatus.innerHTML = `Текущий движок: <strong>${data.current}</strong>`;
+                
+                // Обновляем доступность бэкендов
+                data.backends.forEach(backend => {
+                    const radio = document.querySelector(`input[value="${backend.name}"]`);
+                    if (radio) {
+                        radio.disabled = !backend.available;
+                        const label = radio.parentElement;
+                        if (!backend.available) {
+                            label.style.opacity = '0.5';
+                            label.title = 'Недоступен';
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Ошибка загрузки информации о бэкендах:', error);
+            }
+        }
+
+        async function switchBackend(event) {
+            const backendName = event.target.value;
+            
+            try {
+                const response = await fetch('/api/backend', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ backend: backendName })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatus(data.message, 'success');
+                    backendStatus.innerHTML = `Текущий движок: <strong>${data.backend}</strong>`;
+                } else {
+                    showStatus(`Ошибка: ${data.error}`, 'error');
+                    // Возвращаем предыдущий выбор
+                    event.target.checked = false;
+                }
+            } catch (error) {
+                console.error('Ошибка переключения бэкенда:', error);
+                showStatus('Ошибка переключения движка', 'error');
+                event.target.checked = false;
+            }
+        }
+    </script>
+</body>
+</html>
