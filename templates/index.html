@@ -177,6 +177,10 @@
         <div class="result" id="result" style="display: none;">
             <h3>Исправленный текст:</h3>
             <div class="result-text" id="resultText"></div>
+            <div id="metrics" style="margin-top: 12px; color: #555; font-size: 14px; display: none;">
+                <div id="audioLen"></div>
+                <div id="procTime"></div>
+            </div>
             
             <div id="audioControls" style="margin-top: 15px; display: none;">
                 <button class="btn" id="playAudioBtn" style="background: linear-gradient(45deg, #4CAF50, #45a049); font-size: 14px; padding: 10px 20px;">
@@ -196,6 +200,8 @@
         let mediaRecorder;
         let audioChunks = [];
         let isRecording = false;
+        let recordStartedAt = null;
+        let lastRecordedDurationSec = null;
 
         const recordBtn = document.getElementById('recordBtn');
         const clearBtn = document.getElementById('clearBtn');
@@ -251,6 +257,7 @@
 
                 mediaRecorder.start();
                 isRecording = true;
+                recordStartedAt = Date.now();
                 
                 recordBtn.innerHTML = '<span class="microphone-icon">⏹️</span> Остановить запись';
                 recordBtn.classList.add('recording');
@@ -266,6 +273,10 @@
             if (mediaRecorder && isRecording) {
                 mediaRecorder.stop();
                 isRecording = false;
+                if (recordStartedAt) {
+                    lastRecordedDurationSec = (Date.now() - recordStartedAt) / 1000;
+                    recordStartedAt = null;
+                }
                 
                 recordBtn.innerHTML = '<span class="microphone-icon">🎤</span> Начать запись';
                 recordBtn.classList.remove('recording');
@@ -290,7 +301,10 @@
 
                 if (data.success) {
                     showStatus('Текст успешно распознан и исправлен!', 'success');
-                    showResult(data.text, data.original, data.audio_url);
+                    showResult(data.text, data.original, data.audio_url, {
+                        audio_duration_sec: data.audio_duration_sec,
+                        processing_sec: data.processing_sec
+                    });
                 } else {
                     showStatus(`Ошибка: ${data.error}`, 'error');
                 }
@@ -314,10 +328,35 @@
             }
         }
 
-        function showResult(text, originalText, audioUrl) {
+        function showResult(text, originalText, audioUrl, metrics) {
             resultText.textContent = text;
             result.style.display = 'block';
             clearBtn.style.display = 'inline-block';
+            
+            // Показ бенчмарков
+            const metricsBox = document.getElementById('metrics');
+            const audioLen = document.getElementById('audioLen');
+            const procTime = document.getElementById('procTime');
+            const durationToShow = metrics && metrics.audio_duration_sec != null
+                ? metrics.audio_duration_sec
+                : (lastRecordedDurationSec != null ? lastRecordedDurationSec : null);
+            if ((durationToShow != null) || (metrics && metrics.processing_sec != null)) {
+                metricsBox.style.display = 'block';
+                if (durationToShow != null) {
+                    audioLen.textContent = `Длина записи: ${durationToShow.toFixed(3)} сек`;
+                } else {
+                    audioLen.textContent = '';
+                }
+                if (metrics.processing_sec != null) {
+                    procTime.textContent = `Время обработки движка: ${metrics.processing_sec.toFixed(3)} сек`;
+                } else {
+                    procTime.textContent = '';
+                }
+            } else {
+                metricsBox.style.display = 'none';
+                audioLen.textContent = '';
+                procTime.textContent = '';
+            }
             
             // Показываем кнопку прослушивания, если есть аудио
             if (audioUrl) {

@@ -10,6 +10,7 @@ import warnings
 from werkzeug.utils import secure_filename
 from concurrent.futures import ThreadPoolExecutor
 import threading
+import subprocess
 
 # Отключаем предупреждения Whisper о FP16
 warnings.filterwarnings("ignore", message="FP16 is not supported on CPU")
@@ -80,21 +81,46 @@ class WhisperBackend:
                 return "Whisper не готов, попробуйте позже"
         
         try:
+            # Консервативные параметры для уменьшения галлюцинаций и повторов
             result = self.model.transcribe(
                 audio_file_path,
                 language="ru",
                 task="transcribe",
                 temperature=0.0,
-                best_of=5,
+                best_of=1,
                 beam_size=5,
                 patience=1.0,
                 length_penalty=1.0,
-                suppress_tokens=[-1],
+                condition_on_previous_text=False,
+                no_speech_threshold=0.6,
+                logprob_threshold=-0.5,
+                compression_ratio_threshold=2.4,
                 initial_prompt="Это аудиозапись на русском языке. Текст должен быть грамматически правильным и читаемым."
             )
             return result['text'].strip()
         except Exception as e:
             return f"Ошибка распознавания Whisper: {str(e)}"
+# Простая функция извлечения метаданных WAV
+def get_wav_metadata(file_path):
+    try:
+        import wave
+        with wave.open(file_path, 'rb') as wf:
+            num_channels = wf.getnchannels()
+            sample_rate = wf.getframerate()
+            sample_width_bytes = wf.getsampwidth()
+            num_frames = wf.getnframes()
+            duration_sec = num_frames / float(sample_rate) if sample_rate > 0 else None
+            return {
+                'format': 'wav',
+                'num_channels': num_channels,
+                'sample_rate_hz': sample_rate,
+                'sample_width_bits': sample_width_bytes * 8,
+                'num_frames': num_frames,
+                'duration_sec': duration_sec
+            }
+    except Exception:
+        return None
+
 
 class VoskBackend:
     def __init__(self):
@@ -279,7 +305,33 @@ def post_process_text(text):
     
     # Убираем лишние пробелы
     text = re.sub(r'\s+', ' ', text).strip()
-    
+
+    # Фильтруем заведомо нежелательные фразы, которые часто галлюцинируются
+    blacklist_phrases = [
+        'продолжение следует',
+        'музыка',
+        'аплодисменты',
+        'смех зрителей'
+    ]
+    for phrase in blacklist_phrases:
+        # удаляем повторяющиеся вставки вида "... Продолжение следует ... Продолжение следует ..."
+        text = re.sub(rf'(?:\b{re.escape(phrase)}\b\.?\s*){2,}', '', text, flags=re.IGNORECASE)
+        # удаляем одиночное в конце
+        text = re.sub(rf'(?:\b{re.escape(phrase)}\b\.?\s*)$', '', text, flags=re.IGNORECASE)
+
+    # Удаляем подряд идущие одинаковые предложения (анти-дубликатор)
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    seen = []
+    deduped = []
+    for s in sentences:
+        s_norm = s.strip().lower()
+        if not s_norm:
+            continue
+        if not seen or s_norm != seen[-1]:
+            deduped.append(s.strip())
+            seen.append(s_norm)
+    text = ' '.join(deduped)
+
     return text
 
 @app.route('/')
@@ -353,11 +405,17 @@ def upload_file():
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
             file.save(tmp_file.name)
             
-            # Транскрибируем аудио с помощью текущего бэкенда
-            original_text = current_backend.transcribe(tmp_file.name)
+            # Метаданные WAV (просто и быстро)
+            audio_metadata = get_wav_metadata(tmp_file.name)
+            audio_duration_sec = audio_metadata['duration_sec'] if audio_metadata else None
             
-            # Постобработка текста для улучшения грамматики
-            text = post_process_text(original_text)
+            # Транскрибируем аудио с помощью текущего бэкенда и замеряем время обработки
+            t_start = time.time()
+            original_text = current_backend.transcribe(tmp_file.name)
+            processing_sec = time.time() - t_start
+            
+            # Возвращаем чистый текст без исправлений
+            text = original_text
             
             # Создаем постоянный файл для прослушивания
             audio_filename = f"audio_{int(time.time())}.wav"
@@ -377,7 +435,10 @@ def upload_file():
                 'text': text,
                 'original': original_text,  # Оригинальный текст для сравнения
                 'audio_url': f"/static/audio/{audio_filename}",  # URL для прослушивания
-                'backend': current_backend.name  # Информация о бэкенде
+                'backend': current_backend.name,  # Информация о бэкенде
+                'audio_duration_sec': round(audio_duration_sec, 3) if audio_duration_sec is not None else None,
+                'processing_sec': round(processing_sec, 3),
+                'audio_metadata': audio_metadata
             })
             
     except Exception as e:

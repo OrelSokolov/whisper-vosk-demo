@@ -1,0 +1,38 @@
+FROM nvidia/cuda:12.6.2-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ------------------------
+# 1. Базовые пакеты
+# ------------------------
+RUN apt-get update && apt-get install -y \
+    python3 python3-pip ffmpeg wget unzip curl git build-essential portaudio19-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# ------------------------
+# 2. Обновление pip
+# ------------------------
+RUN python3 -m pip install --upgrade pip setuptools wheel packaging
+
+# ------------------------
+# 3. Устанавливаем тяжелые зависимости (Torch Nightly)
+# ------------------------
+RUN pip install --pre torch torchvision torchaudio \
+    --extra-index-url https://download.pytorch.org/whl/nightly/cu124
+
+# ------------------------
+# 4. Легкие Python-зависимости
+# ------------------------
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+# ------------------------
+# 5. Код приложения
+# ------------------------
+COPY . .
+
+EXPOSE 5000
+
+CMD ["python3", "app.py"]

@@ -1,23 +1,27 @@
-version: '3.8'
-
 services:
   audio-app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.cuda
     ports:
       - "5000:5000"
     volumes:
-      # Сохраняем аудио файлы на хосте
       - ./static/audio:/app/static/audio
-      # Используем локальную модель Vosk (если есть)
       - ./models:/app/models:ro
     environment:
       - FLASK_ENV=production
     restart: unless-stopped
-    mem_limit: 6g   # ← ограничение памяти для Whisper Turbo + Vosk Small
-    mem_reservation: 2g
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 120s  # Больше времени для загрузки Whisper Turbo
+      start_period: 120s
+
